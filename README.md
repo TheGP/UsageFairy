@@ -1,10 +1,10 @@
 # UsageFairy
 
-UsageFairy shows **weekly allowance remaining** on the existing Windows taskbar icons for Codex, Claude, and ZCode. It adds a small number to each open app's icon, without adding new taskbar icons.
+UsageFairy shows weekly allowance usage on the existing Windows taskbar icons for Codex, Claude, and ZCode. By default, the numbers and allowance bar fill show **percent used**. It adds a small number to each open app's icon, without adding new taskbar icons.
 
 ![Allowance numbers on taskbar icons](screenshots/taskbar-badges.png)
 
-Click the `%` notification area icon for a compact details window. It shows only apps that are open, with segmented bars for allowance remaining and days elapsed in the current week. Drag its top row to move it; UsageFairy remembers the position. The X hides the window while the badges keep running.
+Click the `%` notification area icon for the details window. It shows only apps that are open, uses their installed logos when available, and has segmented bars for allowance and days elapsed in the current week. In minimal mode, drag any visible element except the X to move it. UsageFairy remembers the position. The X hides the window while the badges keep running.
 
 ![UsageFairy details window](screenshots/popup.png)
 
@@ -18,6 +18,16 @@ Requires Windows 10/11, Windows PowerShell 5.1, and Node.js 18 or newer on `PATH
 
 Run the installer again after moving the folder to update the shortcut. To disable autostart, remove `UsageFairy.lnk` from `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`. Right-click the `%` tray icon and choose **Exit widget** to stop the current session.
 
+## Settings
+
+Right-click the `%` tray icon and open **Settings**:
+
+- **Number on badges and bars:** choose **Used** or **Remaining**. This changes both taskbar digits and the allowance bar's text.
+- **Allowance bar fill:** choose **Used** or **Remaining** independently of the number.
+- **Minimal popup:** removes the popup background, headings, and footer. Drag the bars, logos, or small `...` handle to move it; the X remains a close control. Turn this off to see the live/cached status and 30-second refresh label in the popup.
+
+Settings are saved in `data/settings.json` and restored on launch. The default is used numbers, used bar fill, and the standard popup. The week bar always shows the fraction of the week elapsed.
+
 ## Readings
 
 | App | Source |
@@ -26,8 +36,8 @@ Run the installer again after moving the folder to update the shortcut. To disab
 | Claude | Windows accessibility reading of the Claude Desktop Usage view or prompt popover. When Claude is focused and Windows has been idle for 15 seconds, UsageFairy may briefly open and close the popover; automatic peeks are at most once per 15 minutes. It makes no direct Claude usage API calls. |
 | ZCode | Read-only Coding Plan usage endpoint using the locally installed ZCode credential. |
 
-The poller refreshes every 30 seconds. Percentages are **remaining**, so a provider's 7% used appears as 93% here. A cached Claude reading has a small orange dot; the details window notes cached or unavailable readings at the bottom. When a current value cannot be read, the badge shows `--`. Reset times appear in the week bars when available.
+The poller refreshes every 30 seconds. A provider's 7% used appears as 7% in the default view or 93% when numbers are set to **Remaining**. A cached Claude reading has a small orange dot; the standard details window notes cached or unavailable readings at the bottom. When a current value cannot be read, the badge shows `--`. Reset times appear in the week bars when available.
 
-UsageFairy writes current readings, logs, saved window position, and hourly snapshots under `data/` in its folder. `data/` is ignored by Git. `data/weekly-history.jsonl` records one snapshot per UTC hour while running, including each available remaining percentage, change since the previous hour, and reset time. Unavailable or stale readings are recorded as `null`.
+UsageFairy writes current readings, settings, logs, saved window position, and hourly snapshots under `data/` in its folder. `data/` is ignored by Git. `data/weekly-history.jsonl` records one snapshot per UTC hour while running, including each available **remaining** percentage, change since the previous hour, and reset time. Unavailable or stale readings are recorded as `null`.
 
 The scripts use local app credentials already present on the computer. They do not copy credentials into `data/`; keep your local ZCode credential file private.

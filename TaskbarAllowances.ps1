@@ -226,6 +226,48 @@ function New-DetailLabel {
     return $label
 }
 
+function Get-AppLogo {
+    param([string]$App)
+    try {
+        $path = switch ($App) {
+            'Codex' {
+                $package = Get-AppxPackage -Name 'OpenAI.Codex' | Select-Object -First 1
+                if ($package) {
+                    $logoPath = Join-Path $package.InstallLocation 'assets\Square44x44Logo.png'
+                    if (Test-Path -LiteralPath $logoPath -PathType Leaf) {
+                        $logo = [System.Drawing.Image]::FromFile($logoPath)
+                        try { return [System.Drawing.Bitmap]::new($logo) } finally { $logo.Dispose() }
+                    }
+                    Join-Path $package.InstallLocation 'app\ChatGPT.exe'
+                }
+                else {
+                    $process = Get-Process -Name 'ChatGPT' -ErrorAction SilentlyContinue |
+                        Where-Object { $_.Path } | Select-Object -First 1
+                    if ($process) { $process.Path }
+                }
+            }
+            'Claude' {
+                $package = Get-AppxPackage -Name 'Claude' | Select-Object -First 1
+                if ($package) { Join-Path $package.InstallLocation 'app\Claude.exe' }
+                else {
+                    $process = Get-Process -Name 'Claude' -ErrorAction SilentlyContinue |
+                        Where-Object { $_.Path } | Select-Object -First 1
+                    if ($process) { $process.Path }
+                }
+            }
+            'ZCode' {
+                $process = Get-Process -Name 'ZCode' -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Path } | Select-Object -First 1
+                if ($process) { $process.Path }
+            }
+        }
+        if (-not $path -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+        $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($path)
+        if ($null -eq $icon) { return $null }
+        try { return $icon.ToBitmap() } finally { $icon.Dispose() }
+    } catch { return $null }
+}
+
 function Format-LocalTime {
     param($Milliseconds)
     if ($null -eq $Milliseconds -or "$Milliseconds" -eq '') { return 'Unknown' }
@@ -244,6 +286,62 @@ function Get-WeekPassedPercent {
     } catch { return $null }
 }
 
+function Read-Settings {
+    $current = @{ numberMode = 'used'; barMode = 'used'; minimalPopup = $false }
+    try {
+        if (Test-Path -LiteralPath $settingsFile) {
+            $saved = Get-Content -LiteralPath $settingsFile -Raw | ConvertFrom-Json
+            if ($saved.numberMode -in @('used', 'remaining')) { $current.numberMode = $saved.numberMode }
+            if ($saved.barMode -in @('used', 'remaining')) { $current.barMode = $saved.barMode }
+            if ($saved.minimalPopup -is [bool]) { $current.minimalPopup = $saved.minimalPopup }
+        }
+    } catch { }
+    return $current
+}
+
+function Save-Settings {
+    try {
+        $tempFile = "$settingsFile.tmp"
+        [System.IO.File]::WriteAllText($tempFile, ($settings | ConvertTo-Json -Compress))
+        if (Test-Path -LiteralPath $settingsFile) {
+            $backupFile = "$settingsFile.bak"
+            [System.IO.File]::Replace($tempFile, $settingsFile, $backupFile)
+            [System.IO.File]::Delete($backupFile)
+        } else {
+            [System.IO.File]::Move($tempFile, $settingsFile)
+        }
+    } catch { }
+}
+
+function Apply-Settings {
+    $numberUsedItem.Checked = $settings.numberMode -eq 'used'
+    $numberRemainingItem.Checked = $settings.numberMode -eq 'remaining'
+    $barUsedItem.Checked = $settings.barMode -eq 'used'
+    $barRemainingItem.Checked = $settings.barMode -eq 'remaining'
+    $minimalItem.Checked = [bool]$settings.minimalPopup
+
+    $minimal = [bool]$settings.minimalPopup
+    $details.TransparencyKey = if ($minimal) { [System.Drawing.Color]::FromArgb(1, 1, 1) }
+        else { [System.Drawing.Color]::Empty }
+    $details.BackColor = if ($minimal) { [System.Drawing.Color]::FromArgb(1, 1, 1) } else {
+        [System.Drawing.Color]::FromArgb(30, 30, 30)
+    }
+    $closeButton.BackColor = if ($minimal) { [System.Drawing.Color]::FromArgb(48, 48, 48) }
+        else { $details.BackColor }
+    $dragHandle.BackColor = if ($minimal) { [System.Drawing.Color]::FromArgb(48, 48, 48) }
+        else { [System.Drawing.Color]::Transparent }
+    foreach ($row in $detailRows.Values) {
+        $row.Logo.BackColor = if ($minimal) { [System.Drawing.Color]::FromArgb(42, 42, 42) }
+            else { [System.Drawing.Color]::Transparent }
+    }
+    $dragHandle.Visible = $minimal
+    foreach ($header in $headerLabels) { $header.Visible = -not $minimal }
+    $statusLabel.Visible = -not $minimal
+    $refreshLabel.Visible = -not $minimal
+    Update-DetailRows
+    Update-TrayDetails
+}
+
 function Update-TrayDetails {
     $summary = @()
     $notes = @()
@@ -252,11 +350,19 @@ function Update-TrayDetails {
         $reading = if ($null -ne $data) { $data.($app.ToLowerInvariant()) } else { $null }
         $hasValue = $null -ne $reading -and $null -ne $reading.remainingPercent
         $cached = $hasValue -and [bool]$reading.stale
-        $left = if ($hasValue) { "$($reading.remainingPercent)%" } else { '--' }
+        $usedPercent = if ($hasValue) { 100 - [int]$reading.remainingPercent } else { $null }
+        $numberPercent = if ($settings.numberMode -eq 'used') { $usedPercent }
+            elseif ($hasValue) { [int]$reading.remainingPercent } else { $null }
+        $barPercent = if ($settings.barMode -eq 'used') { $usedPercent }
+            elseif ($hasValue) { [int]$reading.remainingPercent } else { $null }
+        $display = if ($hasValue) {
+            if ($settings.numberMode -eq 'used') { "$numberPercent% used" }
+            else { "$numberPercent% left" }
+        } else { '--' }
         $row = $detailRows[$app]
         $row.Remaining.HasValue = $hasValue
-        $row.Remaining.ValuePercent = if ($hasValue) { [int]$reading.remainingPercent } else { 0 }
-        $row.Remaining.DisplayText = if ($hasValue) { "$left left" } else { '--' }
+        $row.Remaining.ValuePercent = if ($hasValue) { [int]$barPercent } else { 0 }
+        $row.Remaining.DisplayText = $display
 
         $passed = if ($null -ne $reading) { Get-WeekPassedPercent $reading.resetsAt } else { $null }
         $row.Week.HasValue = $null -ne $passed
@@ -267,7 +373,7 @@ function Update-TrayDetails {
 
         if (-not $badges[$app].Visible) { continue }
         $openCount++
-        $summary += "$app $left"
+        $summary += "$app $display"
         if (-not $hasValue) { $notes += "$app unavailable" }
         elseif ($cached) { $notes += "$app cached: $(Format-LocalTime $reading.sampledAt)" }
         if ($app -eq 'Claude' -and $null -eq $reading.resetsAt) {
@@ -286,22 +392,33 @@ function Update-DetailRows {
     foreach ($app in $apps) {
         $row = $detailRows[$app]
         $isOpen = [bool]$badges[$app].Visible
-        $row.Label.Visible = $isOpen
+
+        if ($isOpen -and $null -eq $row.Logo.Image -and
+            (Get-Date) -ge $row.LastLogoAttempt.AddMinutes(1)) {
+            $row.LastLogoAttempt = Get-Date
+            $row.Logo.Image = Get-AppLogo $app
+        }
+        $row.Label.Visible = $isOpen -and $null -eq $row.Logo.Image
+        $row.Logo.Visible = $isOpen -and $null -ne $row.Logo.Image
         $row.Remaining.Visible = $isOpen
         $row.Week.Visible = $isOpen
         if (-not $isOpen) { continue }
 
-        $y = 41 + $visibleIndex * 36
+        $y = if ($settings.minimalPopup) { 24 + $visibleIndex * 30 }
+            else { 41 + $visibleIndex * 36 }
         $row.Label.Location = [System.Drawing.Point]::new(15, $y)
+        $row.Logo.Location = [System.Drawing.Point]::new(32, $y + 1)
         $row.Remaining.Location = [System.Drawing.Point]::new(80, $y)
         $row.Week.Location = [System.Drawing.Point]::new(230, $y)
         $visibleIndex++
     }
 
-    $footerY = 41 + $visibleIndex * 36
+    $footerY = if ($settings.minimalPopup) { 24 + $visibleIndex * 30 }
+        else { 41 + $visibleIndex * 36 }
     $statusLabel.Location = [System.Drawing.Point]::new(15, $footerY)
     $refreshLabel.Location = [System.Drawing.Point]::new(338, $footerY)
-    $height = $footerY + 33
+    $height = if ($settings.minimalPopup) { [Math]::Max(32, $footerY + 9) }
+        else { $footerY + 33 }
     if ($details.ClientSize.Height -ne $height) {
         $oldBottom = $details.Bottom
         $details.ClientSize = [System.Drawing.Size]::new(435, $height)
@@ -382,6 +499,8 @@ $dataDirectory = Join-Path $PSScriptRoot 'data'
 [void][System.IO.Directory]::CreateDirectory($dataDirectory)
 $dataFile = Join-Path $dataDirectory 'allowances.json'
 $detailsPositionFile = Join-Path $dataDirectory 'window-position.json'
+$settingsFile = Join-Path $dataDirectory 'settings.json'
+$settings = Read-Settings
 $pollerPath = Join-Path $PSScriptRoot 'TaskbarAllowancesData.js'
 $nodePath = (Get-Command node.exe -ErrorAction Stop).Source
 $apps = @('Codex', 'Claude', 'ZCode')
@@ -414,7 +533,11 @@ $closeButton.BackColor = $details.BackColor
 $closeButton.ForeColor = [System.Drawing.Color]::FromArgb(205, 205, 205)
 $closeButton.TabStop = $false
 $closeButton.add_MouseEnter({ $closeButton.BackColor = [System.Drawing.Color]::FromArgb(92, 40, 40) })
-$closeButton.add_MouseLeave({ $closeButton.BackColor = $details.BackColor })
+$closeButton.add_MouseLeave({
+    $closeButton.BackColor = if ($settings.minimalPopup) {
+        [System.Drawing.Color]::FromArgb(48, 48, 48)
+    } else { $details.BackColor }
+})
 $closeButton.add_Click({ Save-DetailsPosition; $details.Hide() })
 $details.Controls.Add($closeButton)
 $beginDetailsDrag = {
@@ -424,15 +547,25 @@ $beginDetailsDrag = {
         Save-DetailsPosition
     }
 }
+$beginMinimalBarDrag = {
+    param($sender, $eventArgs)
+    if ($settings.minimalPopup) { & $beginDetailsDrag $sender $eventArgs }
+}
 $details.add_MouseDown({
     param($sender, $eventArgs)
-    if ($eventArgs.Y -lt 35 -and $eventArgs.X -lt 405) {
+    $dragHeight = if ($settings.minimalPopup) { 24 } else { 35 }
+    if ($eventArgs.Y -lt $dragHeight -and $eventArgs.X -lt 405) {
         & $beginDetailsDrag $sender $eventArgs
     }
 })
+$dragHandle = New-DetailLabel '...' 15 2 30 18
+$dragHandle.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 180)
+$dragHandle.Visible = $false
+$dragHandle.add_MouseDown($beginDetailsDrag)
+$details.Controls.Add($dragHandle)
 $headerLabels = @(
     (New-DetailLabel 'App' 15 13 58 18 $true),
-    (New-DetailLabel 'Remaining' 80 13 136 18 $true),
+    (New-DetailLabel 'Allowance' 80 13 136 18 $true),
     (New-DetailLabel 'Week elapsed / reset' 230 13 170 18 $true)
 )
 foreach ($header in $headerLabels) {
@@ -444,19 +577,34 @@ for ($index = 0; $index -lt $apps.Count; $index++) {
     $app = $apps[$index]
     $y = 41 + $index * 36
     $appLabel = New-DetailLabel $app 15 $y 58 23 $true
+    $appLabel.add_MouseDown($beginDetailsDrag)
     $details.Controls.Add($appLabel)
+    $appLogo = [System.Windows.Forms.PictureBox]::new()
+    $appLogo.Image = Get-AppLogo $app
+    $appLogo.Location = [System.Drawing.Point]::new(32, $y + 1)
+    $appLogo.Size = [System.Drawing.Size]::new(20, 20)
+    $appLogo.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+    $appLogo.BackColor = [System.Drawing.Color]::Transparent
+    $appLogo.AccessibleName = "$app logo"
+    $appLogo.add_MouseDown($beginDetailsDrag)
+    $details.Controls.Add($appLogo)
     $remainingBar = [AllowanceBar]::new()
     $remainingBar.Location = [System.Drawing.Point]::new(80, $y)
     $remainingBar.Size = [System.Drawing.Size]::new(136, 23)
     $remainingBar.SegmentCount = 10
+    $remainingBar.add_MouseDown($beginMinimalBarDrag)
     $weekBar = [AllowanceBar]::new()
     $weekBar.Location = [System.Drawing.Point]::new(230, $y)
     $weekBar.Size = [System.Drawing.Size]::new(190, 23)
     $weekBar.SegmentCount = 7
     $weekBar.FillColor = [System.Drawing.Color]::FromArgb(102, 91, 143)
+    $weekBar.add_MouseDown($beginMinimalBarDrag)
     $details.Controls.Add($remainingBar)
     $details.Controls.Add($weekBar)
-    $detailRows[$app] = @{ Label = $appLabel; Remaining = $remainingBar; Week = $weekBar }
+    $detailRows[$app] = @{
+        Label = $appLabel; Logo = $appLogo; Remaining = $remainingBar; Week = $weekBar
+        LastLogoAttempt = [DateTime]::MinValue
+    }
 }
 $statusLabel = New-DetailLabel '' 15 149 310 25
 $statusLabel.Font = [System.Drawing.Font]::new('Segoe UI', 8)
@@ -488,6 +636,14 @@ $trayIcon.Icon = $iconImage
 $trayIcon.Text = 'UsageFairy - click for details'
 $trayMenu = [System.Windows.Forms.ContextMenuStrip]::new()
 $openItem = $trayMenu.Items.Add('Show weekly allowances')
+$settingsItem = $trayMenu.Items.Add('Settings')
+$numberMenu = $settingsItem.DropDownItems.Add('Number on badges and bars')
+$numberUsedItem = $numberMenu.DropDownItems.Add('Used')
+$numberRemainingItem = $numberMenu.DropDownItems.Add('Remaining')
+$barMenu = $settingsItem.DropDownItems.Add('Allowance bar fill')
+$barUsedItem = $barMenu.DropDownItems.Add('Used')
+$barRemainingItem = $barMenu.DropDownItems.Add('Remaining')
+$minimalItem = $settingsItem.DropDownItems.Add('Minimal popup (transparent, no headings or footer)')
 $exitItem = $trayMenu.Items.Add('Exit widget')
 $trayIcon.ContextMenuStrip = $trayMenu
 $running = $true
@@ -496,6 +652,11 @@ $trayIcon.add_MouseClick({
     if ($eventArgs.Button -eq [System.Windows.Forms.MouseButtons]::Left) { Show-TrayDetails }
 })
 $openItem.add_Click({ Show-TrayDetails })
+$numberUsedItem.add_Click({ $settings.numberMode = 'used'; Save-Settings; Apply-Settings })
+$numberRemainingItem.add_Click({ $settings.numberMode = 'remaining'; Save-Settings; Apply-Settings })
+$barUsedItem.add_Click({ $settings.barMode = 'used'; Save-Settings; Apply-Settings })
+$barRemainingItem.add_Click({ $settings.barMode = 'remaining'; Save-Settings; Apply-Settings })
+$minimalItem.add_Click({ $settings.minimalPopup = -not $settings.minimalPopup; Save-Settings; Apply-Settings })
 $exitItem.add_Click({ $script:running = $false })
 $details.add_FormClosing({
     param($sender, $eventArgs)
@@ -505,6 +666,7 @@ $details.add_FormClosing({
         $sender.Hide()
     }
 })
+Apply-Settings
 $trayIcon.Visible = $true
 
 $nextPollerCheck = Get-Date
@@ -551,7 +713,10 @@ try {
                 $null -ne $reading.remainingPercent -and [bool]$reading.stale -and
                 $null -ne $reading.sampledAt -and
                 ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() - [long]$reading.sampledAt) -lt 12 * 60 * 60 * 1000
-            $badge.BadgeText = if ($hasReading -or $cachedClaude) { [string]$reading.remainingPercent } else { '--' }
+            $badge.BadgeText = if ($hasReading -or $cachedClaude) {
+                if ($settings.numberMode -eq 'used') { [string](100 - [int]$reading.remainingPercent) }
+                else { [string]$reading.remainingPercent }
+            } else { '--' }
             $badge.IsStale = $cachedClaude
 
             $rect = $rectangles[$app]
@@ -589,6 +754,7 @@ try {
         $pollProcess.Dispose()
     }
     foreach ($app in $apps) {
+        if ($null -ne $detailRows[$app].Logo.Image) { $detailRows[$app].Logo.Image.Dispose() }
         $badges[$app].Close()
         $badges[$app].Dispose()
     }
