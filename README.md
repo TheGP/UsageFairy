@@ -6,7 +6,13 @@ UsageFairy shows weekly allowance usage on the existing Windows taskbar icons fo
 
 Click the `%` notification area icon to show or hide the details window. It shows only apps that are open, uses their installed logos when available, and has segmented bars for allowance and days elapsed in the current week. In minimal mode, drag a bar or logo to move it. UsageFairy remembers the position. The standard popup also has an X to hide it.
 
-![UsageFairy details window](screenshots/popup.png)
+Minimal popup:
+
+![UsageFairy minimal popup](screenshots/popup.png)
+
+Standard popup:
+
+![UsageFairy standard popup](screenshots/popup-standard.png)
 
 ## Install
 

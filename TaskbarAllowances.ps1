@@ -420,7 +420,10 @@ function Update-DetailRows {
         $oldBottom = $details.Bottom
         $details.ClientSize = [System.Drawing.Size]::new(435, $height)
         if ($details.Visible) {
-            $details.Top = $oldBottom - $details.Height
+            $workArea = [System.Windows.Forms.Screen]::FromRectangle($details.Bounds).WorkingArea
+            $left = [Math]::Max($workArea.Left, [Math]::Min($details.Left, $workArea.Right - $details.Width))
+            $top = [Math]::Max($workArea.Top, [Math]::Min($oldBottom - $details.Height, $workArea.Bottom - $details.Height))
+            $details.Location = [System.Drawing.Point]::new($left, $top)
             Save-DetailsPosition
         }
     }
