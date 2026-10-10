@@ -4,7 +4,7 @@ UsageFairy shows weekly allowance usage on the existing Windows taskbar icons fo
 
 ![Allowance numbers on taskbar icons](screenshots/taskbar-badges.png)
 
-Click the `%` notification area icon for the details window. It shows only apps that are open, uses their installed logos when available, and has segmented bars for allowance and days elapsed in the current week. In minimal mode, drag any visible element except the X to move it. UsageFairy remembers the position. The X hides the window while the badges keep running.
+Click the `%` notification area icon to show or hide the details window. It shows only apps that are open, uses their installed logos when available, and has segmented bars for allowance and days elapsed in the current week. In minimal mode, drag a bar or logo to move it. UsageFairy remembers the position. The standard popup also has an X to hide it.
 
 ![UsageFairy details window](screenshots/popup.png)
 
@@ -24,7 +24,7 @@ Right-click the `%` tray icon and open **Settings**:
 
 - **Number on badges and bars:** choose **Used** or **Remaining**. This changes both taskbar digits and the allowance bar's text.
 - **Allowance bar fill:** choose **Used** or **Remaining** independently of the number.
-- **Minimal popup:** removes the popup background, headings, and footer. Drag the bars, logos, or small `...` handle to move it; the X remains a close control. Turn this off to see the live/cached status and 30-second refresh label in the popup.
+- **Minimal popup:** removes the popup background, headings, footer, and close button. Drag a bar or logo to move it, and click the `%` tray icon to hide it. Turn this off to see the live/cached status and 30-second refresh label in the popup.
 
 Settings are saved in `data/settings.json` and restored on launch. The default is used numbers, used bar fill, and the standard popup. The week bar always shows the fraction of the week elapsed.
 

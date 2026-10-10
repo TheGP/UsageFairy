@@ -326,15 +326,12 @@ function Apply-Settings {
     $details.BackColor = if ($minimal) { [System.Drawing.Color]::FromArgb(1, 1, 1) } else {
         [System.Drawing.Color]::FromArgb(30, 30, 30)
     }
-    $closeButton.BackColor = if ($minimal) { [System.Drawing.Color]::FromArgb(48, 48, 48) }
-        else { $details.BackColor }
-    $dragHandle.BackColor = if ($minimal) { [System.Drawing.Color]::FromArgb(48, 48, 48) }
-        else { [System.Drawing.Color]::Transparent }
+    $closeButton.BackColor = $details.BackColor
+    $closeButton.Visible = -not $minimal
     foreach ($row in $detailRows.Values) {
         $row.Logo.BackColor = if ($minimal) { [System.Drawing.Color]::FromArgb(42, 42, 42) }
             else { [System.Drawing.Color]::Transparent }
     }
-    $dragHandle.Visible = $minimal
     foreach ($header in $headerLabels) { $header.Visible = -not $minimal }
     $statusLabel.Visible = -not $minimal
     $refreshLabel.Visible = -not $minimal
@@ -404,7 +401,7 @@ function Update-DetailRows {
         $row.Week.Visible = $isOpen
         if (-not $isOpen) { continue }
 
-        $y = if ($settings.minimalPopup) { 24 + $visibleIndex * 30 }
+        $y = if ($settings.minimalPopup) { 8 + $visibleIndex * 30 }
             else { 41 + $visibleIndex * 36 }
         $row.Label.Location = [System.Drawing.Point]::new(15, $y)
         $row.Logo.Location = [System.Drawing.Point]::new(32, $y + 1)
@@ -413,11 +410,11 @@ function Update-DetailRows {
         $visibleIndex++
     }
 
-    $footerY = if ($settings.minimalPopup) { 24 + $visibleIndex * 30 }
+    $footerY = if ($settings.minimalPopup) { 8 + $visibleIndex * 30 }
         else { 41 + $visibleIndex * 36 }
     $statusLabel.Location = [System.Drawing.Point]::new(15, $footerY)
     $refreshLabel.Location = [System.Drawing.Point]::new(338, $footerY)
-    $height = if ($settings.minimalPopup) { [Math]::Max(32, $footerY + 9) }
+    $height = if ($settings.minimalPopup) { [Math]::Max(24, $footerY + 7) }
         else { $footerY + 33 }
     if ($details.ClientSize.Height -ne $height) {
         $oldBottom = $details.Bottom
@@ -436,6 +433,15 @@ function Show-TrayDetails {
     if (-not $details.Visible) { $details.Show() }
     Save-DetailsPosition
     $details.Activate()
+}
+
+function Toggle-TrayDetails {
+    if ($details.Visible) {
+        Save-DetailsPosition
+        $details.Hide()
+    } else {
+        Show-TrayDetails
+    }
 }
 
 function Save-DetailsPosition {
@@ -533,11 +539,7 @@ $closeButton.BackColor = $details.BackColor
 $closeButton.ForeColor = [System.Drawing.Color]::FromArgb(205, 205, 205)
 $closeButton.TabStop = $false
 $closeButton.add_MouseEnter({ $closeButton.BackColor = [System.Drawing.Color]::FromArgb(92, 40, 40) })
-$closeButton.add_MouseLeave({
-    $closeButton.BackColor = if ($settings.minimalPopup) {
-        [System.Drawing.Color]::FromArgb(48, 48, 48)
-    } else { $details.BackColor }
-})
+$closeButton.add_MouseLeave({ $closeButton.BackColor = $details.BackColor })
 $closeButton.add_Click({ Save-DetailsPosition; $details.Hide() })
 $details.Controls.Add($closeButton)
 $beginDetailsDrag = {
@@ -553,16 +555,12 @@ $beginMinimalBarDrag = {
 }
 $details.add_MouseDown({
     param($sender, $eventArgs)
-    $dragHeight = if ($settings.minimalPopup) { 24 } else { 35 }
-    if ($eventArgs.Y -lt $dragHeight -and $eventArgs.X -lt 405) {
+    $dragHeight = if ($settings.minimalPopup) { 8 } else { 35 }
+    $dragWidth = if ($settings.minimalPopup) { 435 } else { 405 }
+    if ($eventArgs.Y -lt $dragHeight -and $eventArgs.X -lt $dragWidth) {
         & $beginDetailsDrag $sender $eventArgs
     }
 })
-$dragHandle = New-DetailLabel '...' 15 2 30 18
-$dragHandle.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 180)
-$dragHandle.Visible = $false
-$dragHandle.add_MouseDown($beginDetailsDrag)
-$details.Controls.Add($dragHandle)
 $headerLabels = @(
     (New-DetailLabel 'App' 15 13 58 18 $true),
     (New-DetailLabel 'Allowance' 80 13 136 18 $true),
@@ -635,7 +633,7 @@ $trayIcon = [System.Windows.Forms.NotifyIcon]::new()
 $trayIcon.Icon = $iconImage
 $trayIcon.Text = 'UsageFairy - click for details'
 $trayMenu = [System.Windows.Forms.ContextMenuStrip]::new()
-$openItem = $trayMenu.Items.Add('Show weekly allowances')
+$openItem = $trayMenu.Items.Add('Show or hide details')
 $settingsItem = $trayMenu.Items.Add('Settings')
 $numberMenu = $settingsItem.DropDownItems.Add('Number on badges and bars')
 $numberUsedItem = $numberMenu.DropDownItems.Add('Used')
@@ -649,9 +647,9 @@ $trayIcon.ContextMenuStrip = $trayMenu
 $running = $true
 $trayIcon.add_MouseClick({
     param($sender, $eventArgs)
-    if ($eventArgs.Button -eq [System.Windows.Forms.MouseButtons]::Left) { Show-TrayDetails }
+    if ($eventArgs.Button -eq [System.Windows.Forms.MouseButtons]::Left) { Toggle-TrayDetails }
 })
-$openItem.add_Click({ Show-TrayDetails })
+$openItem.add_Click({ Toggle-TrayDetails })
 $numberUsedItem.add_Click({ $settings.numberMode = 'used'; Save-Settings; Apply-Settings })
 $numberRemainingItem.add_Click({ $settings.numberMode = 'remaining'; Save-Settings; Apply-Settings })
 $barUsedItem.add_Click({ $settings.barMode = 'used'; Save-Settings; Apply-Settings })
