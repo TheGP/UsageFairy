@@ -4,6 +4,10 @@ $widgetPath = Join-Path $PSScriptRoot 'TaskbarAllowances.ps1'
 if (-not (Test-Path -LiteralPath $widgetPath -PathType Leaf)) {
     throw "UsageFairy script not found: $widgetPath"
 }
+$launcherPath = Join-Path $PSScriptRoot 'Start-UsageFairy.ps1'
+if (-not (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
+    throw "UsageFairy launcher not found: $launcherPath"
+}
 
 $startupDirectory = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
 [void][System.IO.Directory]::CreateDirectory($startupDirectory)
@@ -13,7 +17,7 @@ $shell = New-Object -ComObject WScript.Shell
 
 $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = $powerShellPath
-$shortcut.Arguments = '-NoProfile -Sta -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $widgetPath + '"'
+$shortcut.Arguments = '-NoProfile -Sta -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcherPath + '"'
 $shortcut.WorkingDirectory = $PSScriptRoot
 $shortcut.Description = 'UsageFairy weekly allowance badges'
 $shortcut.Save()
