@@ -19,8 +19,8 @@ Standard popup:
 Requires Windows 10/11, Windows PowerShell 5.1, and Node.js 18 or newer on `PATH`. Install and sign in to the apps whose usage you want to see.
 
 1. Clone this repository to a folder you intend to keep.
-2. Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-Startup.ps1` from that folder. This creates a `UsageFairy.lnk` shortcut in your Windows Startup folder. The popup opens after sign-in at its saved position.
-3. Start it now with `powershell.exe -NoProfile -Sta -ExecutionPolicy Bypass -WindowStyle Hidden -File .\Start-UsageFairy.ps1`. At the next sign-in it starts automatically.
+2. Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Install-Startup.ps1` from that folder. This creates a `UsageFairy.lnk` shortcut in your Windows Startup folder. Its launcher keeps the console hidden, and the popup opens after sign-in at its saved position.
+3. To start it now, open that shortcut in your Startup folder. At the next sign-in it starts automatically.
 
 Run the installer again after moving the folder to update the shortcut. To disable autostart, remove `UsageFairy.lnk` from `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`. Right-click the `%` tray icon and choose **Exit widget** to stop the current session.
 
