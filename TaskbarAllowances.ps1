@@ -81,17 +81,16 @@ public sealed class TaskbarAllowanceBadge : Form
     protected override void OnPaint(PaintEventArgs e)
     {
         e.Graphics.SmoothingMode = SmoothingMode.None;
-        e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;
         using (Brush background = new SolidBrush(Color.FromArgb(24, 24, 24)))
         {
             e.Graphics.FillRectangle(background, 3, 0, 18, 16);
             e.Graphics.FillRectangle(background, 0, 3, 24, 10);
         }
-        int size = badgeText.Length > 2 ? 9 : 11;
-        using (Font font = new Font("Segoe UI", size, FontStyle.Bold, GraphicsUnit.Pixel))
-        using (Brush text = new SolidBrush(Color.White))
-        using (StringFormat format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
-            e.Graphics.DrawString(badgeText, font, text, new RectangleF(0, 0, 24, 16), format);
+        int size = badgeText.Length > 2 ? 11 : 14;
+        using (Font font = new Font("Tahoma", size, FontStyle.Bold, GraphicsUnit.Pixel))
+            TextRenderer.DrawText(e.Graphics, badgeText, font, new Rectangle(0, 0, 24, 16),
+                Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
         if (isStale)
         {
             using (Brush marker = new SolidBrush(Color.Orange))
