@@ -86,7 +86,7 @@ public sealed class TaskbarAllowanceBadge : Form
             e.Graphics.FillRectangle(background, 3, 0, 18, 16);
             e.Graphics.FillRectangle(background, 0, 3, 24, 10);
         }
-        int size = badgeText.Length > 2 ? 11 : 14;
+        int size = badgeText.Length > 2 ? 9 : 11;
         using (Font font = new Font("Tahoma", size, FontStyle.Bold, GraphicsUnit.Pixel))
             TextRenderer.DrawText(e.Graphics, badgeText, font, new Rectangle(0, 0, 24, 16),
                 Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
