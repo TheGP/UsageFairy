@@ -1,5 +1,9 @@
 # UsageFairy
 
+**macOS:** [Download the Mac app](https://github.com/TheGP/UsageFairy/releases/latest)
+or read the [Mac setup guide](macos/README.md). Intel and Apple Silicon builds
+include their runtime and use a compact floating widget with a `%` menu-bar control.
+
 UsageFairy shows weekly allowance usage on the existing Windows taskbar icons for Codex, Claude, and ZCode. By default, the numbers and allowance bar fill show **percent used**. It adds a small number to each open app's icon, without adding new taskbar icons.
 
 ![Allowance numbers on taskbar icons](screenshots/taskbar-badges.png)

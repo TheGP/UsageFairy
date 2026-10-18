@@ -4,7 +4,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 
-const dataDir = path.join(__dirname, 'data');
+const dataDir = process.env.USAGEFAIRY_DATA_DIR || path.join(__dirname, 'data');
 const dataFile = path.join(dataDir, 'allowances.json');
 const historyFile = path.join(dataDir, 'weekly-history.jsonl');
 const claudeDesktopFile = path.join(dataDir, 'claude-desktop-usage.json');
@@ -16,14 +16,41 @@ let lastClaudeLiveAt = 0;
 let lastClaudeAutoPeekAt = 0;
 try { lastClaudeLiveAt = Number(JSON.parse(fs.readFileSync(claudeDesktopFile, 'utf8')).sampledAt) || 0; } catch {}
 
-function codexExecutable() {
-  const binRoot = path.join(process.env.LOCALAPPDATA, 'OpenAI', 'Codex', 'bin');
+function codexExecutable(platform = process.platform, env = process.env, home = os.homedir()) {
+  if (env.CODEX_BIN && fs.existsSync(env.CODEX_BIN)) return env.CODEX_BIN;
+  if (platform !== 'win32') {
+    const candidates = [
+      '/Applications/Codex.app/Contents/Resources/codex',
+      ...(env.PATH || '').split(path.delimiter).filter(Boolean).map(dir => path.join(dir, 'codex')),
+      ...['/opt/homebrew/bin', '/usr/local/bin', path.join(home, '.local', 'bin'), path.join(home, '.volta', 'bin')].map(dir => path.join(dir, 'codex'))
+    ];
+    for (const root of [path.join(home, '.nvm', 'versions', 'node'), path.join(home, '.local', 'share', 'nvm')]) {
+      try {
+        for (const name of fs.readdirSync(root).filter(name => /^v\d+\.\d+\.\d+$/.test(name)).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))) {
+          candidates.push(path.join(root, name, 'bin', 'codex'));
+        }
+      } catch {}
+    }
+    for (const file of candidates) {
+      try {
+        fs.accessSync(file, fs.constants.X_OK);
+        if (fs.statSync(file).isFile()) return file;
+      } catch {}
+    }
+    throw new Error('Install Codex CLI or set CODEX_BIN');
+  }
+  const binRoot = path.join(env.LOCALAPPDATA || '', 'OpenAI', 'Codex', 'bin');
   const candidates = fs.readdirSync(binRoot)
     .map(name => path.join(binRoot, name, 'codex.exe'))
     .filter(fs.existsSync)
     .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
   if (!candidates.length) throw new Error('Codex executable unavailable');
   return candidates[0];
+}
+
+function claudeHistoryFile(platform = process.platform, env = process.env, home = os.homedir()) {
+  const base = platform === 'darwin' ? path.join(home, 'Library', 'Application Support') : env.APPDATA;
+  return base ? path.join(base, 'Claude', 'plan-usage-history.json') : null;
 }
 
 function fetchCodex() {
@@ -56,7 +83,10 @@ function fetchCodex() {
           child.stdin.write(JSON.stringify({ method: 'initialized' }) + '\n');
           child.stdin.write(JSON.stringify({ id: 2, method: 'account/rateLimits/read', params: {} }) + '\n');
         } else if (message.id === 2) {
-          if (message.error) return finish(new Error('Codex rate-limit read failed'));
+          if (message.error) {
+            const rejected = /\b401\b|unauthorized|not logged in/i.test(message.error.message || '');
+            return finish(new Error(rejected ? 'Codex sign-in rejected; sign in again on this computer' : 'Codex rate-limit read failed'));
+          }
           const result = message.result || {};
           const bucket = result.rateLimitsByLimitId?.codex || result.rateLimits;
           const windows = [bucket?.primary, bucket?.secondary].filter(Boolean);
@@ -122,8 +152,8 @@ async function fetchClaude() {
   } catch {}
 
   // Claude Desktop may also update this file without a Claude Code login.
-  const historyFile = path.join(process.env.APPDATA, 'Claude', 'plan-usage-history.json');
-  if (fs.existsSync(historyFile)) {
+  const historyFile = claudeHistoryFile();
+  if (historyFile && fs.existsSync(historyFile)) {
     const history = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
     const latest = history.samples?.at(-1);
     if (latest && now() - Number(latest.t) < 12 * 60 * 60 * 1000 && Number.isFinite(Number(latest.u?.sd))) {
@@ -133,7 +163,9 @@ async function fetchClaude() {
     }
   }
   if (candidates.length) return candidates.sort((a, b) => b.sampledAt - a.sampledAt)[0];
-  throw new Error('Claude current local usage unavailable');
+  throw new Error(process.platform === 'darwin'
+    ? 'Open Claude Usage; allow UsageFairy in Accessibility'
+    : 'Claude current local usage unavailable');
 }
 
 function resetTimeFromLabel(label) {
@@ -152,9 +184,12 @@ function resetTimeFromLabel(label) {
 function readClaudeDesktop(allowPeek) {
   return new Promise((resolve, reject) => {
     const helper = path.join(__dirname, 'ClaudeDesktopUsage.ps1');
-    const args = ['-NoProfile', '-Sta', '-ExecutionPolicy', 'Bypass', '-File', helper];
-    if (allowPeek) args.push('-PeekIfIdle');
-    const child = spawn('powershell.exe', args,
+    const isMac = process.platform === 'darwin';
+    const executable = isMac ? process.env.USAGEFAIRY_MAC_HELPER : 'powershell.exe';
+    if (!executable) return reject(new Error('UsageFairy Mac helper unavailable'));
+    const args = isMac ? ['--read-claude'] : ['-NoProfile', '-Sta', '-ExecutionPolicy', 'Bypass', '-File', helper];
+    if (allowPeek && !isMac) args.push('-PeekIfIdle');
+    const child = spawn(executable, args,
       { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
     let output = '';
     let settled = false;
@@ -216,7 +251,7 @@ function recordHourly(result) {
 }
 
 async function main(quiet = false) {
-  fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   let previous = {};
   try { previous = JSON.parse(fs.readFileSync(dataFile, 'utf8')); } catch {}
   const providers = { codex: fetchCodex, claude: fetchClaude, zcode: fetchZCode };
@@ -240,24 +275,28 @@ async function main(quiet = false) {
     [key, value && typeof value === 'object' ? { remainingPercent: value.remainingPercent, stale: !!value.stale, error: value.error } : value]))));
 }
 
-const loopIndex = process.argv.indexOf('--loop');
-if (loopIndex >= 0) {
-  const parentPid = Number(process.argv[loopIndex + 1]);
-  let polling = false;
-  async function tick() {
-    if (polling) return;
-    polling = true;
-    try { await main(true); } catch (error) { console.error(error.message); }
-    finally { polling = false; }
-  }
-  tick();
-  setInterval(() => {
-    if (parentPid > 0) {
-      try { process.kill(parentPid, 0); }
-      catch { process.exit(0); }
+module.exports = { codexExecutable, claudeHistoryFile, remaining, resetTimeFromLabel, dataDirectory: dataDir };
+
+if (require.main === module) {
+  const loopIndex = process.argv.indexOf('--loop');
+  if (loopIndex >= 0) {
+    const parentPid = Number(process.argv[loopIndex + 1]);
+    let polling = false;
+    async function tick() {
+      if (polling) return;
+      polling = true;
+      try { await main(true); } catch (error) { console.error(error.message); }
+      finally { polling = false; }
     }
     tick();
-  }, 30000);
-} else {
-  main().catch(error => { console.error(error.message); process.exitCode = 1; });
+    setInterval(() => {
+      if (parentPid > 0) {
+        try { process.kill(parentPid, 0); }
+        catch { process.exit(0); }
+      }
+      tick();
+    }, 30000);
+  } else {
+    main().catch(error => { console.error(error.message); process.exitCode = 1; });
+  }
 }
