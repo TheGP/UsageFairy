@@ -206,6 +206,10 @@ function Get-TaskbarRectangles {
                     $found[$app] = $button.Current.BoundingRectangle
                 }
             }
+            if ($name -match '^ChatGPT - .*running window' -and
+                -not $found.ContainsKey('Codex')) {
+                $found['Codex'] = $button.Current.BoundingRectangle
+            }
         } catch { }
     }
     return $found
